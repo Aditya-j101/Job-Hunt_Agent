@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+
 class ResumeProfile(BaseModel):
     skills: List[str]
     years_experience: float
@@ -10,11 +11,13 @@ class ResumeProfile(BaseModel):
 
 class JobRequirements(BaseModel):
     title: str
+    company: str
     required_skills: List[str]
     nice_to_have_skills: List[str] = []
     seniority: str
     min_years_experience: Optional[float] = None
     key_responsibilities: List[str]
+
 
 class MatchResult(BaseModel):
     job_title: str

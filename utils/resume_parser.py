@@ -31,11 +31,11 @@ RESUME_PROFILE_SCHEMA = {
     "properties": {
         "skills": {"type": "array", "items": {"type": "string"}},
         "years_experience": {"type": "number"},
-        "past_titles": {"type": "array", "items": {"type": "string"}},
-        "key_projects": {"type": "array", "items": {"type": "string"}},
+        "past_roles": {"type": "array", "items": {"type": "string"}},
         "education": {"type": "string"},
+        "notable_projects": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["skills", "years_experience", "past_titles", "key_projects", "education"],
+    "required": ["skills", "years_experience", "past_roles", "education", "notable_projects"],
 }
 
 SYSTEM_PROMPT = """You are an expert resume parser. Extract structured information

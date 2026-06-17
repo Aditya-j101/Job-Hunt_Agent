@@ -1,6 +1,6 @@
 from utils.resume_parser import parse_resume
 
-RESUME_FILE_PATH = "data/Aditya Jaiswal Resume.pdf"  # adjust to wherever your resume actually is
+RESUME_FILE_PATH = "data/resume.pdf"  # adjust to wherever your resume actually is
 
 
 def parse_resume_node(state):
