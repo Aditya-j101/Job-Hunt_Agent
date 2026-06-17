@@ -84,3 +84,59 @@ def call_claude(
 
     logger.error(f"[call_claude] all {MAX_RETRIES} attempts failed.")
     raise last_error
+
+def call_claude_structured(
+    system_prompt: str,
+    user_prompt: str,
+    schema: dict,
+    schema_name: str,
+    model: str = DEFAULT_MODEL,
+    max_tokens: int = 1024,
+) -> dict:
+    """
+    Forces Claude to return output matching the given JSON schema using
+    tool-use, instead of hoping a plain-text response parses as JSON.
+    """
+    tool = {
+        "name": schema_name,
+        "description": f"Extract structured data matching the {schema_name} schema.",
+        "input_schema": schema,
+    }
+
+    last_error = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        start_time = time.time()
+        try:
+            response = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+                tools=[tool],
+                tool_choice={"type": "tool", "name": schema_name},
+            )
+            latency = time.time() - start_time
+            usage = response.usage
+            logger.info(
+                f"[call_claude_structured] model={model} attempt={attempt} "
+                f"latency={latency:.2f}s input_tokens={usage.input_tokens} "
+                f"output_tokens={usage.output_tokens}"
+            )
+
+            for block in response.content:
+                if block.type == "tool_use":
+                    return block.input
+
+            raise ValueError("No tool_use block found in response")
+
+        except (RateLimitError, APIConnectionError, APIError) as e:
+            last_error = e
+            wait_time = BASE_DELAY_SECONDS * (2 ** (attempt - 1))
+            logger.warning(
+                f"[call_claude_structured] attempt {attempt}/{MAX_RETRIES} failed: {e}. "
+                f"Retrying in {wait_time}s..."
+            )
+            time.sleep(wait_time)
+
+    logger.error(f"[call_claude_structured] all {MAX_RETRIES} attempts failed.")
+    raise last_error
