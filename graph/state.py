@@ -9,6 +9,7 @@ class AgentState(TypedDict):
     current_job_index: int
     retry_counts: dict[str, int]
     errors: list[str]
+    validation_passed: bool 
 
 
 def initial_state() -> AgentState:
@@ -19,4 +20,15 @@ def initial_state() -> AgentState:
         current_job_index=0,
         retry_counts={},
         errors=[],
+    )
+
+def initial_state() -> AgentState:
+    return AgentState(
+        resume_profile=None,
+        jobs=[],
+        matches=[],
+        current_job_index=0,
+        retry_counts={},
+        errors=[],
+        validation_passed=False,    
     )

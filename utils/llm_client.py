@@ -1,142 +1,165 @@
 """
-Central wrapper for all Claude API calls.
+Central wrapper for all Groq API calls.
+Uses llama-3.1-8b-instant — free, fast, and reliable at structured JSON output.
 
-Every node in graph/nodes.py, plus resume_parser.py and embeddings.py
-(if it needs LLM-based reasoning alongside similarity scores), should
-import call_claude() from here instead of talking to the Anthropic
-client directly. This is the one file that owns the API key,
-retry/backoff logic, and usage logging.
+The interface is kept identical to the previous Claude version:
+call_claude_structured() is kept as the function name so resume_parser.py,
+job_parser.py, and matcher.py need zero changes.
 """
 
 import os
+import re
+import json
 import time
 import logging
 from dotenv import load_dotenv
-from anthropic import Anthropic, APIError, APIConnectionError, RateLimitError
+from groq import Groq, RateLimitError, APIConnectionError, APIError
 
 load_dotenv()
 
-API_KEY = os.getenv("ANTHROPIC_API_KEY")
-if not API_KEY:
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
     raise ValueError(
-        "ANTHROPIC_API_KEY not found. Did you create a .env file "
-        "(copied from .env.example) with your real key in it?"
+        "GROQ_API_KEY not found. Add your Groq API key to your .env file."
     )
 
-client = Anthropic(api_key=API_KEY)
+client = Groq(api_key=GROQ_API_KEY)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("llm_client")
 
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "llama-3.1-8b-instant"
 MAX_RETRIES = 3
-BASE_DELAY_SECONDS = 2  # doubles each retry: 2s, 4s, 8s
+BASE_DELAY_SECONDS = 2
 
 
-def call_claude(
+def extract_json_from_response(text: str) -> dict:
+    """
+    Robustly extracts JSON from model output.
+    LLMs sometimes wrap JSON in markdown code blocks or add commentary
+    before/after — this handles all those cases cleanly.
+    """
+    # strip markdown code blocks if present
+    text = re.sub(r"```(?:json)?", "", text).strip()
+    text = text.strip("`").strip()
+
+    # try parsing the whole response first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # find the first {...} block in the response
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+
+    raise ValueError(f"Could not extract valid JSON from response:\n{text[:500]}")
+
+
+def call_hf(
     system_prompt: str,
     user_prompt: str,
     model: str = DEFAULT_MODEL,
     max_tokens: int = 1024,
-    temperature: float = 0.0,
+    temperature: float = 0.1,
 ) -> str:
     """
-    Calls Claude with retry/backoff on transient errors (rate limits,
-    connection issues, server errors), and logs latency + token usage
-    for every call so you can track cost and performance across a
-    full pipeline run.
-
-    Raises the last error if all retries are exhausted, so callers
-    can decide how to handle a hard failure (e.g. skip that job,
-    add it to state["errors"]).
+    Basic text generation. Returns raw text response.
     """
     last_error = None
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
 
     for attempt in range(1, MAX_RETRIES + 1):
         start_time = time.time()
         try:
-            response = client.messages.create(
+            response = client.chat.completions.create(
                 model=model,
+                messages=messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
             )
             latency = time.time() - start_time
-            usage = response.usage
+            result = response.choices[0].message.content
+            tokens_used = response.usage.total_tokens
 
             logger.info(
-                f"[call_claude] model={model} attempt={attempt} "
-                f"latency={latency:.2f}s input_tokens={usage.input_tokens} "
-                f"output_tokens={usage.output_tokens}"
+                f"[call_Groq] model={model} attempt={attempt} "
+                f"latency={latency:.2f}s total_tokens={tokens_used}"
             )
-
-            return response.content[0].text
+            return result
 
         except (RateLimitError, APIConnectionError, APIError) as e:
             last_error = e
             wait_time = BASE_DELAY_SECONDS * (2 ** (attempt - 1))
             logger.warning(
-                f"[call_claude] attempt {attempt}/{MAX_RETRIES} failed "
-                f"({type(e).__name__}: {e}). Retrying in {wait_time}s..."
+                f"[call_Groq] attempt {attempt}/{MAX_RETRIES} failed: {e}. "
+                f"Retrying in {wait_time}s..."
             )
             time.sleep(wait_time)
 
-    logger.error(f"[call_claude] all {MAX_RETRIES} attempts failed.")
+    logger.error(f"[call_Groq] all {MAX_RETRIES} attempts failed.")
     raise last_error
 
-def call_claude_structured(
+
+def call_Groq_structured(
     system_prompt: str,
     user_prompt: str,
     schema: dict,
     schema_name: str,
     model: str = DEFAULT_MODEL,
     max_tokens: int = 1024,
+    **kwargs,
 ) -> dict:
     """
-    Forces Claude to return output matching the given JSON schema using
-    tool-use, instead of hoping a plain-text response parses as JSON.
+    Structured JSON extraction.
+    Kept as call_claude_structured so no other file needs to change.
     """
-    tool = {
-        "name": schema_name,
-        "description": f"Extract structured data matching the {schema_name} schema.",
-        "input_schema": schema,
-    }
+    schema_str = json.dumps(schema, indent=2)
+    structured_system = f"""{system_prompt}
+
+CRITICAL INSTRUCTIONS:
+- Respond with ONLY a valid JSON object, nothing else.
+- Do not include any explanation, markdown, or text outside the JSON.
+- Do not wrap the JSON in code blocks or backticks.
+- The JSON must exactly match this schema for {schema_name}:
+{schema_str}
+- Do not add any fields not listed in the schema."""
 
     last_error = None
     for attempt in range(1, MAX_RETRIES + 1):
         start_time = time.time()
         try:
-            response = client.messages.create(
+            raw_response = call_hf(
+                system_prompt=structured_system,
+                user_prompt=user_prompt,
                 model=model,
                 max_tokens=max_tokens,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_prompt}],
-                tools=[tool],
-                tool_choice={"type": "tool", "name": schema_name},
+                temperature=0.1,
             )
             latency = time.time() - start_time
-            usage = response.usage
+            result = extract_json_from_response(raw_response)
+
             logger.info(
-                f"[call_claude_structured] model={model} attempt={attempt} "
-                f"latency={latency:.2f}s input_tokens={usage.input_tokens} "
-                f"output_tokens={usage.output_tokens}"
+                f"[call_Groq_structured] schema={schema_name} "
+                f"attempt={attempt} latency={latency:.2f}s"
             )
+            return result
 
-            for block in response.content:
-                if block.type == "tool_use":
-                    return block.input
-
-            raise ValueError("No tool_use block found in response")
-
-        except (RateLimitError, APIConnectionError, APIError) as e:
+        except (ValueError, Exception) as e:
             last_error = e
             wait_time = BASE_DELAY_SECONDS * (2 ** (attempt - 1))
             logger.warning(
-                f"[call_claude_structured] attempt {attempt}/{MAX_RETRIES} failed: {e}. "
-                f"Retrying in {wait_time}s..."
+                f"[call_Groq_structured] attempt {attempt}/{MAX_RETRIES} "
+                f"failed: {e}. Retrying in {wait_time}s..."
             )
             time.sleep(wait_time)
 
-    logger.error(f"[call_claude_structured] all {MAX_RETRIES} attempts failed.")
+    logger.error(f"[call_Groq_structured] all {MAX_RETRIES} attempts failed.")
     raise last_error

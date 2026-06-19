@@ -7,7 +7,8 @@ validated against the Pydantic schema.
 import pdfplumber
 
 from models.schemas import ResumeProfile
-from utils.llm_client import call_claude_structured
+from utils.llm_client import call_Groq_structured
+
 
 
 def extract_text_from_file(file_path: str) -> str:
@@ -49,7 +50,7 @@ def parse_resume(file_path: str) -> ResumeProfile:
     if not raw_text.strip():
         raise ValueError(f"No text could be extracted from {file_path}")
 
-    extracted = call_claude_structured(
+    extracted = call_Groq_structured(
         system_prompt=SYSTEM_PROMPT,
         user_prompt=f"Resume text:\n\n{raw_text}",
         schema=RESUME_PROFILE_SCHEMA,
