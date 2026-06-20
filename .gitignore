@@ -1,8 +1,27 @@
+# secrets
 .env
+
+# personal data — never commit these
+data/results.db
+data/report.md
+data/sample_jobs/
+data/resume.pdf
+data/resume_upload.pdf
+
+# python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
 *.egg-info/
+
+# testing
 .pytest_cache/
+
+# os
 .DS_Store
+Thumbs.db
+
+# docker
+*.log

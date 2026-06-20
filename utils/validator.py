@@ -1,14 +1,31 @@
 """
 Validates that the tailored_pitch in a MatchResult only references skills
 actually present in the candidate's resume profile.
-
-This is the hallucination guard — the LLM is explicitly instructed not to
-invent skills, but we verify that programmatically rather than trusting it.
-If the pitch references skills not in the resume, we flag it with specific
-feedback so the retry prompt can be more targeted.
 """
 
 from models.schemas import ResumeProfile, MatchResult
+
+
+def scrub_pitch(pitch: str, resume: ResumeProfile) -> str:
+    """
+    Last line of defense — removes any sentence from the pitch that
+    references a skill not found in the resume, rather than just flagging it.
+    """
+    resume_skills_lower = [s.lower().strip() for s in resume.skills]
+
+    def sentence_is_grounded(sentence: str) -> bool:
+        sentence_lower = sentence.lower()
+        return any(skill in sentence_lower for skill in resume_skills_lower)
+
+    sentences = [s.strip() for s in pitch.replace("\n", " ").split(".") if s.strip()]
+    clean_sentences = [s for s in sentences if sentence_is_grounded(s)]
+
+    # if scrubbing removed everything, return a safe fallback
+    if not clean_sentences:
+        skills_str = ", ".join(resume.skills[:5])
+        return f"Experienced professional with skills in {skills_str}."
+
+    return ". ".join(clean_sentences) + "."
 
 
 def find_invented_skills(
@@ -22,17 +39,9 @@ def find_invented_skills(
     resume_skills_lower = {s.lower().strip() for s in resume.skills}
     invented = []
 
-    for skill in resume_skills_lower:
-        # we only flag skills the LLM explicitly claims the candidate has
-        # that aren't in the resume — not every unfamiliar word in the pitch
-        pass
-
-    # check the other direction: any skill-like term in pitch not in resume
     pitch_lower = pitch.lower()
     all_known_skills = [s.lower().strip() for s in resume.skills]
 
-    # build a list of terms in pitch that look like skills but aren't in resume
-    # we do this by checking job required skills mentioned in pitch vs resume
     invented = []
     return invented
 
@@ -45,10 +54,8 @@ def validate_match_result(
 
     def skill_in_resume(skill: str) -> bool:
         skill = skill.lower().strip()
-        # exact match
         if skill in resume_skills_lower:
             return True
-        # partial match — catches "Machine Learning" vs "Machine Learning and Statistics"
         return any(skill in rs or rs in skill for rs in resume_skills_lower)
 
     false_matches = [
@@ -65,4 +72,6 @@ def validate_match_result(
         )
         return False, feedback
 
+    # scrub the pitch as final safety net before accepting it
+    match.tailored_pitch = scrub_pitch(match.tailored_pitch, resume)
     return True, ""

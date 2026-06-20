@@ -30,18 +30,17 @@ MATCH_SCHEMA = {
     ],
 }
 
-SYSTEM_PROMPT = """You are an expert career coach and recruiter. Given a candidate's
-resume profile and a job posting, produce a MatchResult that:
-1. Assigns a match_score from 0-100 (use the provided embedding similarity as a
-   strong signal but apply your own judgment too)
-2. Lists matching and missing skills honestly — do NOT invent skills the candidate
-   doesn't have
-3. Writes a clear 2-sentence rationale explaining the score
-4. Writes a tailored_pitch: 3 resume bullet points using only skills and experience
-   from the candidate's actual profile — never invent experience
+SYSTEM_PROMPT = """You are a career coach writing tailored job application content.
 
-Be honest about gaps. A lower score with accurate missing skills is more useful
-than an inflated score that misleads the candidate."""
+STRICT RULES — violating these makes your output useless:
+1. The tailored_pitch must ONLY mention skills, tools, and experiences 
+   explicitly listed in the candidate's resume profile below.
+2. Do NOT invent skills, experiences, or qualities not in the resume.
+3. Do NOT use vague claims like "strong leadership" or "excellent communication" 
+   unless explicitly listed in the resume skills.
+4. If the candidate lacks a required skill, acknowledge it honestly in 
+   missing_skills — do not compensate by inventing it in the pitch.
+5. Every bullet in tailored_pitch must map to something real in the resume."""
 
 
 def match_resume_to_job(
@@ -51,17 +50,22 @@ def match_resume_to_job(
     embedding_score, matching, missing = compute_skill_similarity(resume, job)
 
     user_prompt = f"""
-Candidate Resume Profile:
+CANDIDATE RESUME PROFILE:
 {resume.model_dump_json(indent=2)}
 
-Job Posting:
+ALLOWED SKILLS FOR PITCH (use ONLY these, nothing else):
+{resume.skills}
+
+JOB POSTING:
 {job.model_dump_json(indent=2)}
 
-Embedding-based skill similarity score (0.0 to 1.0): {embedding_score}
+Embedding similarity score: {embedding_score}
 Pre-computed matching skills: {matching}
 Pre-computed missing required skills: {missing}
 
-Use the above as strong signals. Produce the MatchResult now.
+Write the tailored_pitch using ONLY skills from the ALLOWED SKILLS list above.
+If a job requirement is not in the ALLOWED SKILLS list, put it in missing_skills.
+Do not mention it in the pitch.
 """
 
     extracted = call_Groq_structured(
@@ -71,4 +75,17 @@ Use the above as strong signals. Produce the MatchResult now.
         schema_name="MatchResult",
     )
 
+    extracted = call_Groq_structured(
+    system_prompt=SYSTEM_PROMPT,
+    user_prompt=user_prompt,
+    schema=MATCH_SCHEMA,
+    schema_name="MatchResult",
+)
+
+    # normalise score to 0-100 range if model returned a 0-1 float
+    if extracted.get("match_score", 0) <= 1.0:
+        extracted["match_score"] = round(extracted["match_score"] * 100, 1)
+
     return MatchResult(**extracted)
+
+    

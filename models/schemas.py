@@ -21,7 +21,7 @@ class JobRequirements(BaseModel):
 
 class MatchResult(BaseModel):
     job_title: str
-    match_score: float          
+    match_score: float = Field(ge=0.0, le=100.0)    
     matching_skills: List[str]
     missing_skills: List[str]
     rationale: str              

@@ -28,7 +28,7 @@ client = Groq(api_key=GROQ_API_KEY)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("llm_client")
 
-DEFAULT_MODEL = "llama-3.1-8b-instant"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_RETRIES = 3
 BASE_DELAY_SECONDS = 2
 
