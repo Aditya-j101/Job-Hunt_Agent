@@ -25,5 +25,8 @@ fastapi>=0.111.0
 uvicorn>=0.29.0
 python-multipart>=0.0.9
 
+#StaticFiles
+aiofiles>=23.0.0
+
 # optional: only needed if you build the v2 embedding-based matching stretch goal
 # sentence-transformers>=3.0.0

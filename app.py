@@ -10,6 +10,7 @@ import os
 import shutil
 import sqlite3
 import json
+from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse, PlainTextResponse
 from typing import List
@@ -25,18 +26,6 @@ app = FastAPI(
 
 RESUME_UPLOAD_PATH = "data/resume.pdf"
 JOBS_FOLDER = "data/sample_jobs"
-
-
-@app.get("/")
-def root():
-    return {
-        "message": "Job Hunt Agent API is running",
-        "endpoints": {
-            "POST /analyze": "Upload resume PDF and paste job descriptions",
-            "GET /results": "Fetch all past results from the database",
-            "GET /report": "Get the latest markdown report",
-        },
-    }
 
 
 @app.post("/analyze")
@@ -139,3 +128,8 @@ def get_report():
         content = f.read()
 
     return PlainTextResponse(content=content)
+
+
+# Mount React static files LAST — serves index.html for all unmatched routes
+if os.path.exists("Frontend/dist"):
+    app.mount("/", StaticFiles(directory="Frontend/dist", html=True), name="frontend")
