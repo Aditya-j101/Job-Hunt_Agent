@@ -194,4 +194,4 @@ Zero setup, zero cost, sufficient for a single-user tool. The schema is simple e
 
 **Aditya Jaiswal**
 SDE Intern @ Auxiliobits Technologies | BCA-MCA, Amity University Noida
-[LinkedIn](www.linkedin.com/in/aditya-jaiswal-898523224) · [GitHub](https://github.com/Aditya-j101)
+[LinkedIn](https://www.linkedin.com/in/aditya-jaiswal-898523224/) · [GitHub](https://github.com/Aditya-j101)
