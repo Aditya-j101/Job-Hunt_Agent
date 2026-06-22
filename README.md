@@ -2,6 +2,8 @@
 
 An end-to-end AI-powered pipeline that scores your resume against real job postings, identifies skill gaps, and generates grounded, hallucination-free tailored pitches — built with LangGraph, Groq (Llama 3.3 70B), and FastAPI, containerised with Docker.
 
+**[Try the live demo →](https://job-huntagent-production.up.railway.app)**
+
 ---
 
 ## What it does
